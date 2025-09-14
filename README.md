@@ -2,7 +2,7 @@
 
 ## 📑 Contents
 - [Overview](#-overview)
-- [Installation](#-installation)
+- [Installation](#installation)
 - [Data Construction](#-data-construction)
 - [Training](#-training)
   - [Warm-Up Finetuning with Silver Reasoning Chains](#warm-up-finetuning-with-silver-reasoning-chains)
