@@ -1,0 +1,64 @@
+# Model arguments
+model_name_or_path: your_model_path_or_name
+model_revision: main
+torch_dtype: bfloat16
+attn_implementation: flash_attention_2
+
+# Data training arguments
+dataset_name: your_data_path_or_name
+system_prompt: "You are an expert in drug combination relationship extraction in the medical field that provides well-reasoned and detailed responses."
+
+# GRPO trainer config
+bf16: true
+use_vllm: True
+vllm_device: auto
+vllm_gpu_memory_utilization: 0.4
+vllm_max_model_len: 2200
+do_eval: false
+gradient_accumulation_steps: 1
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+push_to_hub: false
+hub_model_id: None
+learning_rate: 2.0e-05
+log_completions: true
+log_level: info
+logging_first_step: true
+logging_steps: 5
+logging_strategy: steps
+lr_scheduler_type: cosine_with_min_lr
+lr_scheduler_kwargs:
+  min_lr_rate: 0.01
+max_prompt_length: 2048
+max_completion_length: 2048
+max_steps: -1
+num_generations: 3
+num_train_epochs: 50
+output_dir: your_output_directory
+overwrite_output_dir: true
+per_device_eval_batch_size: 3
+per_device_train_batch_size: 3
+report_to:
+- none
+reward_funcs:
+- reasoning_steps
+- format_reward_method_3_without_ner_task
+- drug_combin_reward_with_penalty_method_3_without_ner_task
+- RE_accuracy_reward_with_partial_exact_method_3_without_ner_task
+reward_weights:
+- 0.1
+- 0.1
+- 0.1
+- 0.7
+save_steps: 1362
+seed: 42
+temperature: 0.6
+warmup_ratio: 0.01
+use_peft: true
+lora_r: 16
+lora_alpha: 64
+lora_target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "up_proj", "down_proj", "gate_proj"]
+lora_task_type: CAUSAL_LM
+lora_dropout: 0.05
+# run-20250404_160135-z01akak1

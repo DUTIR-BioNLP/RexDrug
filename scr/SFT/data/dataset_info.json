@@ -1,0 +1,10 @@
+{
+  "sft_data":{
+    "file_name":"RexDrug/SFT/data/dataset/sft_data_no_cot",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output"
+    }
+  }
+}
