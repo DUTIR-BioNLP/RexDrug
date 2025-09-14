@@ -1,14 +1,14 @@
 # RexDrug: Reliable Multi-Drug Combination Extraction through Reasoning-Enhanced LLMs
 
 ## 📑 Contents
-- [Overview](#overview)
-- [Installation](#installation)
-- [Data Construction](#data-construction)
-- [Training](#training)
+- [Overview](#-overview)
+- [Installation](#-installation)
+- [Data Construction](#-data-construction)
+- [Training](#-training)
   - [Warm-Up Finetuning with Silver Reasoning Chains](#warm-up-finetuning-with-silver-reasoning-chains)
   - [Reinforcement Learning with Multi-Dimensional Rewards](#reinforcement-learning-with-multi-dimensional-rewards)
-- [Evaluation](#evaluation)
-- [References](#references)
+- [Evaluation](#-evaluation)
+- [References](#-references)
 ## 📕 Overview
 Drug Combination Extraction (DCE) aims to automatically identify the efficacy of drug combinations from biomedical literature. This task involves extracting variable-length n-ary relations between multiple drugs, which can support complex real-world treatment planning and clinical decision-making. However, most existing biomedical relation extraction methods focus primarily on binary relations and lack high-quality annotated reasoning chains, which limits the progress of multi-drug extraction and hinders clinical interpretability. To address these challenges, we propose RexDrug, an end-to-end n-ary drug combination extraction framework based on large language models and enhanced with reinforcement learning integrate reasoning capabilities. In this framework the model is first trained with silver-standard reasoning chains generated through a multi-agent collaboration strategy. Subsequently, multi-dimensional reward functions are designed to further improve both the quality of the reasoning chains and the accuracy of drug combination extraction. We evaluate RexDrug on both the n-ary DCE task and the traditional binary drugdrug interaction extraction task. Experimental results show that RexDrug consistently generates high-quality, traceable reasoning explanations and outperforms other state-of-the-art approaches, demonstrating its reliability and potential in clinical applications.
 
