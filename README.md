@@ -7,14 +7,13 @@ Automated Drug Combination Extraction (DCE) from large-scale biomedical literatu
 
 ## Quick Start
 This example demonstrates how to run **RexDrug** on a drug combination relation extraction task.  
-Given a biomedical sentence and its surrounding paragraph as context, the model identifies drug combinations and classifies their relation type (**POS / NEG / COMB / NO_COMB**) using chain-of-thought reasoning. The full implementation has been moved to a separate Python script:
-
-`run_rexdrug_demo.py`
+Given a biomedical sentence and its surrounding paragraph as context, the model identifies drug combinations and classifies their relation type (**POS / NEG / COMB / NO_COMB**) using chain-of-thought reasoning. The full implementation has been moved to a separate Python script:`run_rexdrug_demo.py`
 
 You can run the example with:
 
 ```bash
 python run_rexdrug_demo.py
+```
 
 ## Project Structure
 
