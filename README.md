@@ -24,6 +24,7 @@ RexDrug/
 ├── README.md                    # This file
 ├── setup.py                     # Installation script
 ├── requirements.txt             # Python dependencies
+├── run_rexdrug_demo.py          # Quick start demo for RexDrug inference
 │
 ├── datasets/                    # Datasets and data processing
 │   ├── DDI13/                   # DDI2013 dataset
