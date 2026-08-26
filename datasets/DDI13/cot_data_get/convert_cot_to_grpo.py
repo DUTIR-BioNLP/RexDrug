@@ -35,46 +35,14 @@ Usage:
 
 import json
 import argparse
+from runpy import run_path
 from pathlib import Path
 from datetime import datetime
 
-
-# =============================================================================
-# PROMPT TEMPLATES
-# =============================================================================
-
-# System prompt for DDI13 CoT reasoning
-SYSTEM_PROMPT = (
-    "You are an expert in biomedical relation extraction, specializing in sentence-level "
-    "drug-drug interaction (DDI) extraction. You first think step by step in a clinically "
-    "and pharmacologically interpretable way inside <think>...</think>, then output the "
-    "final relation extraction result as JSON inside an <answer>...</answer> tag."
-)
-
-# User input template
-INPUT_TEMPLATE = """Identify all drug-drug interaction (DDI) relations expressed in the target sentence, and assign the correct DDI relation type for each interacting entity pair. Possible relation types include:
-'int': An interaction is stated but not further specified into mechanism/effect/advice.
-'mechanism': The sentence describes how the interaction occurs (PK/PD mechanism).
-'effect': The sentence describes the interaction outcome (e.g., exposure/toxicity/efficacy change) without explicit guidance.
-'advice': The sentence provides explicit clinical guidance (e.g., avoid, contraindicated, dose adjust, monitor).
-'NO_COMB': No interaction relation is expressed between any entity pair in the sentence.
-
-Then provide your reasoning and final answer in two parts:
-1) First, output your reasoning inside <think>...</think>.
-   - Inside <think>, write four numbered sections:
-     [1] Clinical / pharmacological scenario
-     [2] Candidate entities and pair focus
-     [3] Interaction reasoning and relation labeling
-     [4] Extraction-oriented clinical summary
-   - Under each section, use bullet points starting with "- ", with short, clinically/pharmacologically oriented sentences.
-   - Keep the total reasoning concise (about 100-200 words).
-2) Immediately after </think>, output ONLY the final relation extraction result inside an <answer> tag.
-   - Inside <answer>, return a valid JSON array with the schema:
-     [{{"type": "rel_type", "ent_set": ["ent1", "ent2"]}}]
-   - Each ent_set must contain exactly two entity strings (a binary pair).
-   - Do not include any extra text or explanation outside <answer>.
-
-Target sentence: {sentence}"""
+DATASET_DIR = Path(__file__).resolve().parents[1]
+_PROMPTS = run_path(DATASET_DIR / "prompt.py")
+SYSTEM_PROMPT = _PROMPTS["SYSTEM_PROMPT"]
+USER_PROMPT_TEMPLATE = _PROMPTS["USER_PROMPT_TEMPLATE"]
 
 
 # =============================================================================
@@ -135,7 +103,7 @@ def convert_to_grpo_format(input_file: str, output_file: str) -> dict:
                     continue
 
                 # Build user content using template
-                user_content = INPUT_TEMPLATE.replace("{sentence}", sentence)
+                user_content = USER_PROMPT_TEMPLATE.format(sentence=sentence)
 
                 # Convert gold_re to JSON string
                 gold_re_str = json.dumps(gold_re, ensure_ascii=False)

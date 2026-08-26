@@ -53,11 +53,11 @@ fi
 if [ "$DATASET" == "drugcomb" ]; then
     TRAIN_DATA="${DRUGCOMB_DIR}/grpo_cot_data_v2/train_drugcomb.jsonl"
     REWARD_FUNCS="drugcomb_cot_format drugcomb_cot_think drugcomb_coverage_cot drugcomb_accuracy_cot"
-    REWARD_WEIGHTS="0.05 0.05 0.1 0.8"
+    REWARD_WEIGHTS="0.1 0.1 0.1 0.7"
 else
     TRAIN_DATA="${DDI13_DIR}/grpo_cot_data/train_ddi.jsonl"
     REWARD_FUNCS="ddi_cot_format ddi_cot_think ddi_coverage_cot ddi_accuracy_cot"
-    REWARD_WEIGHTS="0.05 0.05 0.1 0.8"
+    REWARD_WEIGHTS="0.1 0.1 0.1 0.7"
 fi
 
 # Output directory

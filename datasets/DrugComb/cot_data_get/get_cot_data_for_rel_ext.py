@@ -3,12 +3,18 @@ import json
 import threading
 import re
 import argparse
+from runpy import run_path
 from typing import List, Dict, Any, Optional, Union
 from datetime import datetime
 from pathlib import Path
 
 from openai import OpenAI
 from tqdm import tqdm
+
+DATASET_DIR = Path(__file__).resolve().parents[1]
+_PROMPTS = run_path(DATASET_DIR / "prompt.py")
+RE_COT_TEMPLATE = _PROMPTS["RE_COT_TEMPLATE"]
+evaluation_prompt = _PROMPTS["evaluation_prompt"]
 
 # =========================
 # Utility Functions
@@ -93,205 +99,6 @@ def create_client(api_key: str, base_url: str = None) -> OpenAI:
         base_url=base_url if base_url else None,
     )
 
-# Evaluation prompt (6 criteria)
-evaluation_prompt = """
-You are a biomedical domain expert and an impartial reviewer.
-
-Your task is to evaluate the quality of a reasoning chain and its relation extraction output
-for a drug combination extraction case.
-
-You will be given:
-- Target Sentence
-- Reference Context
-- Expert-validated drug combination relations (GOLD_RE)
-- Model Reasoning (inside <think>...</think>)
-- Model Answer (inside <answer>...</answer>, as JSON)
-
-Please evaluate the reasoning and answer along SIX criteria.
-Each criterion is scored from 0 to 5 (0 = hard violation, 1 = very poor, 5 = excellent).
-
-1. score_format (0-5)
-- Check if the output follows the required structure:
-  - Reasoning is enclosed in <think>...</think>.
-  - There are four sections labeled [1], [2], [3], [4], each header on its own line.
-  - Under each section, the content is mostly written as bullet points starting with "- ".
-  - The answer is enclosed in <answer>...</answer>.
-  - The content inside <answer> is a valid JSON array that can be parsed by json.loads.
-- If the JSON is invalid or the overall structure is severely broken, assign 0.
-
-2. score_medical (0-5)
-- Is the reasoning medically plausible and consistent with biomedical knowledge?
-- Are there any serious factual errors about diseases, drugs, or clinical effects?
-- If there are major medical errors or contradictions with obvious medical facts, assign 0 or 1.
-
-3. score_semantic (0-5)
-- Does the reasoning accurately reflect the meaning of the Target Sentence and Reference Context?
-- Avoids hallucinating clinical events or details that clearly are not supported by the text.
-- If it contradicts the text or invents key facts, assign a low score.
-
-4. score_re_consistency (0-5)
-- Compare the Model Answer JSON with GOLD_RE:
-  - If they do not match (different combinations, missing or extra drugs, wrong types), assign 0.
-- Check whether the reasoning inside <think> supports these relations:
-  - The described combinations and effects should be consistent with GOLD_RE.
-  - The reasoning should not primarily argue for a different relation than GOLD_RE.
-- For the relation type in GOLD_RE:
-  - If GOLD_RE is POS: the reasoning should describe a beneficial or improved clinical effect.
-  - If GOLD_RE is NEG: the reasoning should describe harmful outcomes, reduced efficacy, or a clear reason to avoid the combination.
-  - If GOLD_RE is COMB: the reasoning should describe clear co-use or a regimen/interaction, with overall effect neutral, mixed, or not clearly judged as good or bad.
-  - If GOLD_RE is NO_COMB: the reasoning should explicitly justify why no drug combination is extracted
-    (e.g. only alternatives or trial arms, theoretical or unproven interaction, separate regimens, or prior/background treatments).
-- Higher scores mean both the JSON and the reasoning are well-aligned with GOLD_RE.
-
-5. score_naturalness (0-5)
-- Does the reasoning read like natural forward reasoning, as if the model inferred the result from the text?
-- If the reasoning explicitly mentions or clearly implies that it was given the answer,
-  or uses terms like "gold answer", "ground truth", "labels", "annotation", assign 0.
-- Penalize meta-comments about the dataset or correctness that break the illusion of natural reasoning.
-
-6. score_usefulness (0-5)
-- For an information extraction and clinical audience:
-  - Does the reasoning highlight textual cues (e.g. trigger phrases) that justify the extracted relations?
-  - Does it explain the clinical intent and role of the drug combination (or the absence of an extractable combination for NO_COMB) in a clear way?
-- Higher scores indicate that the reasoning would help both:
-  - (a) a model learn which textual/clinical patterns correspond to POS, NEG, COMB, and NO_COMB relations, and
-  - (b) a clinician understand why these drugs are or are not extracted as a combination in this case.
-
-Length consideration:
-- The reasoning inside <think> should ideally be concise (roughly 80-220 words).
-- If it is extremely long or extremely short and uninformative, you may reduce score_format or score_usefulness.
-
-Output:
-Return your evaluation as a single JSON object with the following fields:
-
-{
-  "score_format": int,
-  "score_medical": int,
-  "score_semantic": int,
-  "score_re_consistency": int,
-  "score_naturalness": int,
-  "score_usefulness": int,
-  "comment": "A short summary comment (1-3 sentences)."
-}
-"""
-
-
-
-# CoT generation prompt (full template with placeholders, following the standard format)
-RE_COT_TEMPLATE = """You are a biomedical clinician-researcher and an expert in drug combination relation extraction.
-
-You will be given:
-- a Target Sentence,
-- a Reference Context, and
-- an expert-validated extraction of drug combinations and their clinical meaning (the correct RE for this case).
-
-Your task:
-Write a short, structured, clinically interpretable reasoning chain that:
-(1) explains which drug entities are relevant in this case, and
-(2) explains which drug combinations and clinical effects should be extracted,
-in a way that is consistent with the expert-validated extraction.
-
-Important:
-- Treat the expert-validated extraction as correct constraints on the final result.
-- Your reasoning should look like natural forward reasoning from the text, as if you inferred the result yourself.
-- You must follow the labeling guideline below.
-- Do NOT say that you were given the answer.
-- Do NOT mention "gold answer", "ground truth", "labels", or "annotation" in your reasoning.
-
----------------- LABELING GUIDELINE ----------------
-You will see relations of four types: POS, NEG, COMB, NO_COMB.
-
-- POS:
-  Label POS when the text clearly indicates that this set of drugs, used in combination
-  or as a specific regimen, is associated with a beneficial clinical effect
-  (e.g. improved response, survival, or synergistic activity) in the current context.
-
-- NEG:
-  Label NEG when the text clearly indicates that this drug combination or interaction
-  is associated with harmful or antagonistic outcomes
-  (e.g. increased toxicity or risk, reduced efficacy, or an explicit recommendation
-  to avoid the combination).
-
-- COMB:
-  Label COMB when the text clearly states that these drugs are given together or considered
-  as a joint regimen/interaction (e.g. part of the same chemotherapy protocol,
-  coadministered, used in the same treatment course or experimental setup),
-  but the overall clinical effect is neutral, mixed, or not clearly judged as good or bad.
-
-- NO_COMB:
-  Label NO_COMB when multiple drugs are mentioned but they are only listed, compared,
-  or used in separate regimens/background, with no clear evidence that they act as a single
-  combined therapy or interaction set in this setting.
-  Typical NO_COMB patterns include: alternative treatments (A or B), different trial arms (A vs B),
-  previous or other regimens not under current evaluation, and purely theoretical or unproven
-  interactions without clear real-world coadministration and outcome.
-----------------------------------------------------
-
----------------- INPUT ----------------
-Target Sentence:
-{TARGET_SENTENCE}
-
-Reference Context:
-{REFERENCE_CONTEXT}
-
-Expert-validated drug combinations and clinical effects (this is the correct set you must match, in JSON-like form):
-{GOLD_RE}
----------------------------------------
-
-When you answer, follow this exact format:
-
-1. First, output your reasoning inside <think>...</think>.
-
-   Inside <think>, write FOUR numbered sections with bullet points ("- "):
-
-   [1] Clinical scenario
-   - 1-3 bullets.
-   - Describe the main disease/condition or clinical setting.
-   - State the treatment intent (e.g. induction, maintenance, prophylaxis, toxicity management).
-   - Indicate whether the target sentence describes an active regimen, a comparison between regimens, a safety concern, or only background information.
-
-   [2] Candidate drugs and regimen focus
-   - 2-4 bullets.
-   - Identify drugs that are potentially part of a regimen or interaction pattern in this case.
-   - Emphasize drugs that appear in the expert-validated relations above, and explain why they are the core agents (e.g. explicitly named in a regimen, discussed as interacting).
-   - Mention other drugs only if they play a supportive, alternative, or background role, and clarify that role.
-
-   [3] Combination reasoning and clinical effect
-   - 4-7 bullets.
-   - For each key combination in the expert-validated extraction, specify which drugs are used together or considered together, including higher-order combinations (three or more drugs) when present.
-   - Point to the textual evidence or phrases that support treating them as a combination or interaction
-     (e.g. "combination chemotherapy of A, B and C", "coadministration of A and B", "patients receiving A plus B").
-   - Describe the clinical effect according to the guideline:
-     * for POS: explain why the combination is beneficial;
-     * for NEG: explain why the combination is harmful or decreases efficacy;
-     * for COMB: explain that the drugs are clearly used together but the overall effect is neutral, mixed, or not clearly judged;
-     * for NO_COMB: explain why, despite multiple drugs being mentioned, they do NOT form a single combined therapy or interaction in this setting (e.g. only theoretical interaction, alternatives, separate regimens, or prior treatments).
-
-   [4] Extraction-oriented clinical summary
-   - 2-4 bullets.
-   - Summarize, in clinician-friendly language, which drug combinations and clinical effects should be captured under the guideline.
-   - Make the conclusion explicit (e.g. "no extractable combination in this sentence, so NO_COMB is appropriate" or "A and B form the key harmful interaction, labeled NEG").
-   - Phrase this as a brief justification that would make sense to another clinician reading the case.
-
-   Requirements for the content inside <think>:
-   - Each section header ([1]...[4]) must be on its own line (for example: a line that only contains "[1] Clinical scenario").
-   - Under each header, write only bullet points starting with "- ". Do not write free-text paragraphs.
-   - Each bullet should be short (usually one sentence), clinically oriented, and specific to this case.
-   - Keep the total reasoning concise: usually between 100 and 200 words, and always below 300 words.
-
-2. Immediately after </think>, output ONLY the final relation extraction result inside an <answer> tag.
-   - Inside <answer>, output a VALID JSON array, with NO extra text.
-   - The JSON must follow this schema:
-
-<answer>
-[{{"type": "POS|NEG|COMB|NO_COMB", "ent_set": ["drug1", "drug2", "..."]}},...]
-</answer>
-
-Constraints:
-- The JSON you output inside <answer> must be syntactically valid and directly parseable by Python json.loads.
-- The content (relation types and ent_set drug names) must exactly match the expert-validated extraction given in the input (same relation types, same drugs, same spelling; you may follow the same ordering as in {GOLD_RE})."""
-
-
 def build_cot_prompt(sentence: str, paragraph: str, gold_re_str: str,
                      failed_feedback: str = None) -> str:
     """Build the full CoT generation prompt, following the standard template."""
@@ -315,7 +122,7 @@ Pay special attention to:
 2. Structure: Include all four sections [1], [2], [3], [4] with bullet points.
 3. Consistency: The final JSON in <answer> must exactly match the GOLD_RE.
 4. Naturalness: Do NOT mention ground truth, gold answer, or any hint that you know the answer.
-5. Usefulness: Provide clinically meaningful reasoning with textual evidence.
+5. Reasoning quality: Provide clinically meaningful reasoning with textual evidence.
 
 Now, please try again:
 
@@ -330,8 +137,8 @@ Now, please try again:
 
 MAX_RETRIES = 3
 MIN_ACCEPTABLE_SCORE = 4  # Minimum score per criterion to pass
-SCORE_KEYS = ['score_format', 'score_medical', 'score_semantic',
-              'score_re_consistency', 'score_naturalness', 'score_usefulness']
+SCORE_KEYS = ['score_format', 'score_extraction', 'score_semantic',
+              'score_medical', 'score_naturalness', 'score_reasoning']
 
 
 def generate_cot(client: OpenAI, model: str, sentence: str, paragraph: str, gold_re: List[dict],
@@ -426,14 +233,14 @@ Model Output:
             return 0
 
     result = {
-        "score_format":         to_int(parsed.get("score_format", 0)),
-        "score_medical":        to_int(parsed.get("score_medical", 0)),
-        "score_semantic":       to_int(parsed.get("score_semantic", 0)),
-        "score_re_consistency": to_int(parsed.get("score_re_consistency", 0)),
-        "score_naturalness":    to_int(parsed.get("score_naturalness", 0)),
-        "score_usefulness":     to_int(parsed.get("score_usefulness", 0)),
-        "comment":              parsed.get("comment", "Evaluation parsing failed"),
-        "raw_output":           raw_output  # Keep raw output for debugging
+        "score_format":      to_int(parsed.get("score_format", 0)),
+        "score_extraction":  to_int(parsed.get("score_extraction", 0)),
+        "score_semantic":    to_int(parsed.get("score_semantic", 0)),
+        "score_medical":     to_int(parsed.get("score_medical", 0)),
+        "score_naturalness": to_int(parsed.get("score_naturalness", 0)),
+        "score_reasoning":   to_int(parsed.get("score_reasoning", 0)),
+        "comment":           parsed.get("comment", "Evaluation parsing failed"),
+        "raw_output":        raw_output  # Keep raw output for debugging
     }
 
     return result

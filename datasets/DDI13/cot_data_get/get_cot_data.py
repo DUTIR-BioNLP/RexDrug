@@ -39,6 +39,7 @@ import json
 import threading
 import re
 import argparse
+from runpy import run_path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
@@ -55,8 +56,10 @@ except ImportError:
     print("Please install tqdm: pip install tqdm")
     raise
 
-# Import prompts from local module
-from prompt import COT_TEACHER_PROMPT, EVALUATION_PROMPT
+DATASET_DIR = Path(__file__).resolve().parents[1]
+_PROMPTS = run_path(DATASET_DIR / "prompt.py")
+RE_COT_TEMPLATE = _PROMPTS["RE_COT_TEMPLATE"]
+evaluation_prompt = _PROMPTS["evaluation_prompt"]
 
 
 # =============================================================================
@@ -158,6 +161,7 @@ def convert_relations_to_gold_re(relations: List[dict]) -> List[dict]:
     valid_types = {"effect", "advise", "int", "mechanism"}
 
     gold_re = []
+    seen_relation_keys = set()
     for rel in relations:
         rel_type = rel.get("type", "").lower().strip()
         ent_sets = rel.get("ent_sets", [])
@@ -166,21 +170,29 @@ def convert_relations_to_gold_re(relations: List[dict]) -> List[dict]:
         if rel_type == "other" or rel_type not in valid_types:
             continue
 
-        # Normalize entity set
-        ent_set = []
-        seen = set()
-        for ent in ent_sets:
-            if isinstance(ent, str) and ent.strip():
-                ent_clean = ent.strip()
-                if ent_clean not in seen:
-                    seen.add(ent_clean)
-                    ent_set.append(ent_clean)
+        # Preserve the supplied surface forms, including valid same-name pairs.
+        ent_set = [
+            ent.strip()
+            for ent in ent_sets
+            if isinstance(ent, str) and ent.strip()
+        ]
+        if len(ent_set) != 2:
+            continue
 
-        if len(ent_set) >= 2:
-            gold_re.append({
-                "type": rel_type,
-                "ent_set": ent_set
-            })
+        # DDI13 relation keys use an unordered, case-insensitive entity pair.
+        # Keep the first relation so its original spelling and order are retained.
+        relation_key = (
+            rel_type,
+            tuple(sorted(ent.casefold() for ent in ent_set))
+        )
+        if relation_key in seen_relation_keys:
+            continue
+
+        seen_relation_keys.add(relation_key)
+        gold_re.append({
+            "type": rel_type,
+            "ent_set": ent_set
+        })
 
     # If no valid relations, add NO_COMB
     if not gold_re:
@@ -212,8 +224,8 @@ def create_client(api_key: str, base_url: str = None) -> OpenAI:
 MAX_RETRIES = 3
 MIN_ACCEPTABLE_SCORE = 4  # Minimum score per dimension to pass
 SCORE_KEYS = [
-    'score_format', 'score_medical', 'score_semantic',
-    'score_re_consistency', 'score_naturalness', 'score_usefulness'
+    'score_format', 'score_extraction', 'score_semantic',
+    'score_medical', 'score_naturalness', 'score_reasoning'
 ]
 
 
@@ -230,7 +242,7 @@ def build_cot_prompt(sentence: str, gold_re_str: str,
     Returns:
         Complete prompt string
     """
-    prompt = COT_TEACHER_PROMPT.format(
+    prompt = RE_COT_TEMPLATE.format(
         TARGET_SENTENCE=sentence,
         GOLD_RE=gold_re_str
     )
@@ -248,7 +260,7 @@ Pay special attention to:
 2. Structure: Include all four sections [1], [2], [3], [4] with bullet points.
 3. Consistency: The final JSON in <answer> must exactly match the GOLD_RE.
 4. Naturalness: Do NOT mention ground truth, gold answer, or any hint that you know the answer.
-5. Usefulness: Provide clinically meaningful reasoning with textual evidence.
+5. Reasoning quality: Provide clinically meaningful reasoning with textual evidence.
 
 Now, please try again:
 
@@ -314,7 +326,7 @@ def evaluate_cot(client: OpenAI, model: str, sentence: str,
     """
     gold_re_str = json.dumps(gold_re, ensure_ascii=False, separators=(',', ':'))
 
-    eval_input = f"""{EVALUATION_PROMPT}
+    eval_input = f"""{evaluation_prompt}
 
 --- Input for Evaluation ---
 Target Sentence: {sentence}
@@ -345,14 +357,14 @@ Model Output:
             return 0
 
     return {
-        "score_format":         to_int(parsed.get("score_format", 0)),
-        "score_medical":        to_int(parsed.get("score_medical", 0)),
-        "score_semantic":       to_int(parsed.get("score_semantic", 0)),
-        "score_re_consistency": to_int(parsed.get("score_re_consistency", 0)),
-        "score_naturalness":    to_int(parsed.get("score_naturalness", 0)),
-        "score_usefulness":     to_int(parsed.get("score_usefulness", 0)),
-        "comment":              parsed.get("comment", "Evaluation parsing failed"),
-        "raw_output":           raw_output
+        "score_format":      to_int(parsed.get("score_format", 0)),
+        "score_extraction":  to_int(parsed.get("score_extraction", 0)),
+        "score_semantic":    to_int(parsed.get("score_semantic", 0)),
+        "score_medical":     to_int(parsed.get("score_medical", 0)),
+        "score_naturalness": to_int(parsed.get("score_naturalness", 0)),
+        "score_reasoning":   to_int(parsed.get("score_reasoning", 0)),
+        "comment":           parsed.get("comment", "Evaluation parsing failed"),
+        "raw_output":        raw_output
     }
 
 
