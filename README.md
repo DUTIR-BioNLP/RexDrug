@@ -5,6 +5,9 @@ Automated Drug Combination Extraction (DCE) from large-scale biomedical literatu
 
 ![zongtu](./pic/zongtu.png)
 
+This repo contains the source code and dataset for the AIONER. Please refer to our paper for more details:
+[Zhijun Wang, Ling Luo, Dinghao Pan, Huan Zhuang, Lejing Yu, Yuanyuan Sun, Hongfei Lin. "RexDrug: Reliable Multi-Drug Combination Extraction Through Reasoning-Enhanced LLMs," in IEEE Journal of Biomedical and Health Informatics ( Early Access ), doi: 10.1109/JBHI.2026.3737505. ](https://ieeexplore.ieee.org/document/11709028)
+
 ## Quick Start
 This example demonstrates how to run **RexDrug** on a drug combination relation extraction task.  
 Given a biomedical sentence and its surrounding paragraph as context, the model identifies drug combinations and classifies their relation type (**POS / NEG / COMB / NO_COMB**) with reasoning.
